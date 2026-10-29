@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>AACloud · 云朵游乐场</title>
+<style>
+  :root {
+    --sky-top: #16264a;
+    --sky-bottom: #5f9fd1;
+    --cloud: #f6fbff;
+    --sun: #ffc94a;
+    --ink: #0e1a33;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { height: 100%; overflow: hidden; }
+  body {
+    font-family: -apple-system, "PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+    background: linear-gradient(var(--sky-top), var(--sky-bottom));
+    color: var(--cloud);
+    touch-action: manipulation;
+    padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom);
+  }
+  #sky { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+  header {
+    position: fixed; top: env(safe-area-inset-top); left: 0; right: 0;
+    padding: 18px 20px; pointer-events: none;
+  }
+  h1 { font-size: 1.5rem; font-weight: 700; letter-spacing: .02em; }
+  #hint { margin-top: 6px; font-size: .95rem; opacity: .85; max-width: 22em; line-height: 1.5; }
+  #count { font-variant-numeric: tabular-nums; color: var(--sun); font-weight: 700; }
+  footer {
+    position: fixed; left: 0; right: 0; bottom: env(safe-area-inset-bottom);
+    display: flex; gap: 10px; align-items: center; justify-content: space-between;
+    padding: 14px 16px;
+  }
+  button {
+    font: inherit; font-weight: 600; color: var(--ink); background: var(--cloud);
+    border: 0; border-radius: 999px; padding: 12px 20px; min-height: 44px; cursor: pointer;
+  }
+  button:active { transform: scale(.96); }
+  button:focus-visible { outline: 3px solid var(--sun); outline-offset: 2px; }
+  #ver { font-size: .8rem; opacity: .7; text-align: right; }
+  @media (prefers-reduced-motion: reduce) { button:active { transform: none; } }
+</style>
+</head>
+<body>
+<canvas id="sky" aria-label="可点击的天空"></canvas>
+<header>
+  <h1>云朵游乐场</h1>
+  <p id="hint">点一下天空放出一朵云，已放出 <span id="count">0</span> 朵。云碰到你手指会被推开。</p>
+</header>
+<footer>
+  <button id="clear" type="button">清空天空</button>
+  <div id="ver">版本 v1<br><span id="loaded"></span></div>
+</footer>
+
+<script>
+(() => {
+  const cv = document.getElementById('sky');
+  const ctx = cv.getContext('2d');
+  const countEl = document.getElementById('count');
+  const clouds = [];
+  let total = 0, W = 0, H = 0, dpr = 1;
+  let pointer = null;
+
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  function resize() {
+    dpr = Math.min(window.devicePixelRatio || 1, 2);
+    W = innerWidth; H = innerHeight;
+    cv.width = W * dpr; cv.height = H * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  addEventListener('resize', resize);
+  resize();
+
+  function addCloud(x, y) {
+    const r = 22 + Math.random() * 26;
+    clouds.push({
+      x, y, r,
+      vx: (Math.random() < .5 ? -1 : 1) * (.2 + Math.random() * .5),
+      vy: 0,
+      puffs: [[-.9,.2,.7],[-.3,-.3,.9],[.45,-.1,.8],[1,.25,.6],[0,.3,1]]
+    });
+    total++;
+    countEl.textContent = total;
+  }
+
+  function drawCloud(c) {
+    ctx.fillStyle = 'rgba(246,251,255,.95)';
+    ctx.beginPath();
+    for (const [dx, dy, s] of c.puffs) {
+      const px = c.x + dx * c.r, py = c.y + dy * c.r, pr = s * c.r * .8;
+      ctx.moveTo(px + pr, py);
+      ctx.arc(px, py, pr, 0, Math.PI * 2);
+    }
+    ctx.fill();
+  }
+
+  function frame() {
+    ctx.clearRect(0, 0, W, H);
+    // sun
+    ctx.fillStyle = '#ffc94a';
+    ctx.beginPath(); ctx.arc(W * .82, H * .2, 34, 0, Math.PI * 2); ctx.fill();
+
+    for (const c of clouds) {
+      if (!reduce) {
+        if (pointer) {
+          const dx = c.x - pointer.x, dy = c.y - pointer.y;
+          const d = Math.hypot(dx, dy);
+          if (d < 110 && d > 0) { c.vx += dx / d * .6; c.vy += dy / d * .6; }
+        }
+        c.x += c.vx; c.y += c.vy;
+        c.vy *= .94;
+        c.vx *= .995;
+        if (Math.abs(c.vx) < .15) c.vx = Math.sign(c.vx || 1) * .15;
+        const m = c.r * 2;
+        if (c.x < -m) c.x = W + m; else if (c.x > W + m) c.x = -m;
+        c.y = Math.max(c.r, Math.min(H - c.r, c.y));
+      }
+      drawCloud(c);
+    }
+    requestAnimationFrame(frame);
+  }
+
+  cv.addEventListener('pointerdown', e => {
+    pointer = { x: e.clientX, y: e.clientY };
+    addCloud(e.clientX, e.clientY);
+  });
+  cv.addEventListener('pointermove', e => {
+    if (e.buttons || e.pointerType === 'touch') pointer = { x: e.clientX, y: e.clientY };
+  });
+  const release = () => { pointer = null; };
+  cv.addEventListener('pointerup', release);
+  cv.addEventListener('pointercancel', release);
+
+  document.getElementById('clear').addEventListener('click', () => {
+    clouds.length = 0; total = 0; countEl.textContent = 0;
+  });
+
+  // 页面加载时间：每次部署后刷新，能看到时间变化就说明是最新版
+  document.getElementById('loaded').textContent =
+    '打开于 ' + new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+
+  for (let i = 0; i < 3; i++) addCloud(W * (.2 + i * .3), H * (.35 + i * .1));
+  frame();
+})();
+</script>
+</body>
+</html>
